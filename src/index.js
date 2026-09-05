@@ -10,7 +10,7 @@
 import os from 'node:os'
 import path from 'node:path'
 import { createRequire } from 'node:module'
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { fileURLToPath } from 'node:url'
@@ -312,6 +312,47 @@ function cleanupProfileBundle(pluginName, logger) {
   }
 }
 
+async function scanPackageFile(packagePath, packageName, scanner) {
+  if (typeof packagePath !== 'string' || packagePath.trim().length === 0) {
+    throw new Error('package path is required')
+  }
+  const file = path.resolve(packagePath)
+  if (!existsSync(file)) {
+    throw new Error(`package file not found: ${file}`)
+  }
+  const ext = path.extname(file).toLowerCase()
+  const lower = file.toLowerCase()
+  const isTarGz = lower.endsWith('.tar.gz')
+  const isTgz = ext === '.tgz' || isTarGz
+  const isZip = ext === '.zip'
+  if (!isTgz && !isZip) {
+    throw new Error('unsupported package format: use .tgz / .tar.gz / .zip')
+  }
+
+  const tempDir = mkdtempSync(path.join(os.tmpdir(), 'dsh-security-guard-pkg-'))
+  try {
+    const tarArgs = isTgz
+      ? ['-xzf', file, '-C', tempDir]
+      : ['-xf', file, '-C', tempDir]
+    await execFileAsync('tar', tarArgs, { timeout: 120000, windowsHide: true })
+
+    // npm tgz extracts into a single top-level `package/` directory.
+    const entries = readdirSync(tempDir, { withFileTypes: true })
+    const dirs = entries.filter((e) => e.isDirectory()).map((e) => e.name)
+    let root = tempDir
+    if (dirs.length === 1 && !existsSync(path.join(tempDir, 'package.json'))) {
+      root = path.join(tempDir, dirs[0])
+    }
+
+    const name = packageName || path.basename(file).replace(/(\.tgz|\.tar\.gz|\.zip)$/i, '')
+    const report = await scanner.scanPlugin(root, name)
+    return report
+  } finally {
+    try { rmSync(tempDir, { recursive: true, force: true }) } catch { /* ignore */ }
+  }
+}
+
+
 
 
 
@@ -511,6 +552,36 @@ export function apply(ctx, config = {}) {
             },
           }
 
+            const scanPackageDef = {
+              name: 'security_scan_package',
+              description: 'Scan a downloaded DSH plugin installation package (.tgz / .tar.gz / .zip) before installing it. Extracts the package to a temp directory, runs the SecurityGuard static analyzer, and returns the risk level, score and findings.',
+              parameters: {
+                package: { type: 'string', required: true, description: 'Local path to the downloaded package file, e.g. C:/Users/me/Downloads/dsh-foo-1.0.0.tgz' },
+                packageName: { type: 'string', description: 'Optional package name override shown in the report.' },
+                includeNodeModules: { type: 'boolean', description: 'Set true to also scan node_modules inside the package (slower and noisier).' },
+              },
+              output: {
+                schema: {
+                  type: 'object',
+                  additionalProperties: false,
+                  properties: {
+                    ok: { type: 'boolean' },
+                    scannedAt: { type: 'string' },
+                    pluginCount: { type: 'number' },
+                    riskScore: { type: 'number' },
+                    riskLevel: { type: 'string' },
+                    findingsCount: { type: 'number' },
+                    topFindings: { type: 'array', items: { type: 'object', additionalProperties: true } },
+                    pluginSummaries: { type: 'array', items: { type: 'object', additionalProperties: true } },
+                  },
+                },
+                render(args, value) {
+                  return [{ type: 'text', text: reportText(value) }]
+                },
+              },
+            }
+
+
           const reportDef = {
             name: 'security_guard_report',
             description: 'Get the latest SecurityGuard scan report without rescanning. Use this when the user asks "current security report" or "上次扫描结果".',
@@ -553,6 +624,21 @@ export function apply(ctx, config = {}) {
                 return await scanOnePlugin(args?.plugin, { includeNodeModules: args?.includeNodeModules === true })
               }))),
             )
+              disposers.push(
+                sctx.tools.register(wrap(makeTool(scanPackageDef, async (args) => {
+                  const report = await scanPackageFile(args?.package, args?.packageName, scanner)
+                  report.findings = (report.findings ?? []).map((f) => ({ ...f, pluginName: report.pluginName }))
+                  return summarizeForTool({
+                    pluginCount: 1,
+                    scannedAt: report.scannedAt,
+                    riskScore: report.riskScore,
+                    riskLevel: report.riskLevel,
+                    findings: report.findings,
+                    plugins: [report],
+                  })
+                }))),
+              )
+
             disposers.push(
               sctx.tools.register(wrap(makeTool(reportDef, async () => {
                 if (!store.latest) {
@@ -732,6 +818,36 @@ export function apply(ctx, config = {}) {
                     }
                     break
                   }
+                    case 'scanPackage': {
+                      const report = await scanPackageFile(body?.package, body?.packageName, scanner)
+                      report.findings = (report.findings ?? []).map((f) => ({ ...f, pluginName: report.pluginName }))
+                      result = {
+                        results: [{
+                          pluginName: report.pluginName,
+                          riskLevel: report.riskLevel,
+                          riskScore: report.riskScore,
+                          findingsCount: report.findings.length,
+                          skipped: report.skipped,
+                          reason: report.reason ?? '',
+                          findings: report.findings.slice(0, 20).map((f) => ({
+                            ruleId: f.ruleId,
+                            ruleName: f.ruleName,
+                            severity: f.severity,
+                            category: f.category,
+                            filePath: f.filePath,
+                            line: f.line,
+                            match: f.match,
+                            recommendation: f.recommendation ?? '请人工审查此插件的安全风险',
+                          })),
+                        }],
+                        pluginCount: 1,
+                        riskLevel: report.riskLevel,
+                        riskScore: report.riskScore,
+                        scannedAt: report.scannedAt,
+                      }
+                      break
+                    }
+
                   case 'updateRules':
                     result = await scanner.updateRules()
                     break
