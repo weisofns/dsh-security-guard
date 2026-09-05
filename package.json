@@ -20,7 +20,9 @@
 
                      },
     "peerDependencies":  {
-                             "@deepseek-ai/dsh-tools":  "\u003e=0.1.0-rc.1 \u003c0.2.0-0 || \u003e=0.1.2-alpha.0 \u003c0.2.0-0"
+                             "@deepseek-ai/dsh-tools":  "\u003e=0.1.0-rc.1 \u003c0.2.0-0 || \u003e=0.1.2-alpha.0 \u003c0.2.0-0",
+                             "@deepseek-ai/dsh-settings":  "\u003e=0.1.0-rc.1 \u003c0.2.0-0 || \u003e=0.1.2-alpha.0 \u003c0.2.0-0",
+                             "@deepseek-ai/schemastery":  "\u003e=3.18.0 \u003c4"
                          },
     "peerDependenciesMeta":  {
                                  "@deepseek-ai/dsh-tools":  {

@@ -62,7 +62,8 @@ window.__ModuleLoader__.load({
 
     const SEEN_KEY = "dsh-security-guard/seen-alerts";
     const SEEN_MSG_KEY = "dsh-security-guard/seen-alert-messages";
-    const POPUP_MIN_INTERVAL = 10 * 60 * 1000; // 10 minutes
+    let popupEnabled = true;
+    let popupMinIntervalMs = 10 * 60 * 1000; // 10 minutes
     let seenAlerts = [];
     let seenMessages = [];
     let lastPopupAt = 0;
@@ -173,7 +174,7 @@ window.__ModuleLoader__.load({
           !seenAlerts.includes(l.id) &&
           !seenMessages.includes(alertSignature(l))
         );
-        if (fresh.length > 0 && Date.now() - lastPopupAt >= POPUP_MIN_INTERVAL) {
+        if (popupEnabled && fresh.length > 0 && Date.now() - lastPopupAt >= popupMinIntervalMs) {
           const event = fresh[fresh.length - 1];
           lastPopupAt = Date.now();
           markSeen(event);
@@ -181,6 +182,64 @@ window.__ModuleLoader__.load({
         }
       } catch { /* ignore */ }
     }
+
+      function SettingsCard({ scope, describeFace }) {
+        const [cfg, setCfg] = react.useState(null);
+
+        react.useEffect(() => {
+          let mounted = true;
+          function refresh() {
+            try {
+              const snap = describeFace?.getSnapshot?.();
+              const ns = snap?.view?.namespaces?.find((n) => n.ns === "dsh-security-guard");
+              if (ns?.value && mounted) setCfg(ns.value);
+            } catch { /* ignore */ }
+          }
+          refresh();
+          const off = describeFace?.subscribe?.(refresh);
+          return () => { mounted = false; if (off) off(); };
+        }, []);
+
+        function update(field, value) {
+          setCfg((prev) => ({ ...(prev || {}), [field]: value }));
+          try { scope?.set?.(field, value)?.catch?.(() => {}); } catch { /* ignore */ }
+        }
+
+        if (!cfg) return react.createElement("div", null, "加载中...");
+
+        const rowStyle = { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "8px 0", borderBottom: "1px solid var(--dsw-alias-border-l2, #30363d)" };
+        const labelStyle = { fontSize: 13, color: "var(--dsw-alias-label-primary, #c9d1d9)" };
+
+        function toggle(label, field) {
+          return react.createElement("div", { key: field, style: rowStyle },
+            react.createElement("span", { style: labelStyle }, label),
+            react.createElement("input", {
+              type: "checkbox",
+              checked: cfg[field] !== false,
+              onChange: (e) => update(field, e.target.checked),
+            })
+          );
+        }
+
+        return react.createElement("div", { style: { display: "flex", flexDirection: "column", padding: "4px 0" } },
+          toggle("启用大肥鱼安全卫士", "enabled"),
+          toggle("启动后自动扫描", "scanOnStart"),
+          toggle("DSH 内风险弹窗", "popupEnabled"),
+          toggle("挂载本地仪表盘", "enableWebPanel"),
+          react.createElement("div", { key: "popupMinIntervalMinutes", style: rowStyle },
+            react.createElement("span", { style: labelStyle }, "弹窗最小间隔（分钟）"),
+            react.createElement("input", {
+              type: "number",
+              min: 1,
+              max: 120,
+              value: cfg.popupMinIntervalMinutes ?? 10,
+              onChange: (e) => update("popupMinIntervalMinutes", Number(e.target.value) || 10),
+              style: { width: 70, padding: "4px 6px", borderRadius: 6, border: "1px solid var(--dsw-alias-border-l2, #30363d)", background: "var(--dsw-specific-input-major, #0d1117)", color: "var(--dsw-alias-label-primary, #c9d1d9)" },
+            })
+          )
+        );
+      }
+
 
     function ShieldButton() {
       return react.createElement("button", {
@@ -195,7 +254,7 @@ window.__ModuleLoader__.load({
       );
     }
 
-    const inject = ["slots"];
+    const inject = ["slots", "settingsScope"];
 
     function apply(ctx) {
       if (ctx && typeof ctx.slots?.inject === "function" && typeof ctx.slots.register === "function") {
@@ -205,6 +264,17 @@ window.__ModuleLoader__.load({
             (props) => react.createElement(ShieldButton, props)
           )
         );
+
+        if (ctx.settingsScope) {
+          const scope = ctx.settingsScope.bind({ namespace: "dsh-security-guard" });
+          const describeFace = ctx.settingsScope.describe();
+          ctx.slots.inject("settings.plugin.item", () =>
+            ctx.slots.register(
+              { name: "settings.plugin.item", key: "dsh-security-guard", id: "dsh-security-guard", order: 140, label: "大肥鱼安全卫士" },
+              (props) => react.createElement(SettingsCard, { ...props, scope, describeFace })
+            )
+          );
+        }
       }
       if (typeof window !== "undefined" && typeof document !== "undefined") {
         pollAlerts();

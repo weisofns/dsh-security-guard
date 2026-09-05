@@ -14,6 +14,8 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { fileURLToPath } from 'node:url'
+import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
+import z from '@deepseek-ai/schemastery'
 import { SecurityScanner } from './scanner.js'
 import { SEVERITY_WEIGHTS } from './rules.js'
 
@@ -22,6 +24,16 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const require = createRequire(import.meta.url)
 const pkg = require('../package.json')
 const execFileAsync = promisify(execFile)
+
+const SETTINGS_NS = settingsNamespace('dsh-security-guard')
+const SettingsSchema = z.object({
+  enabled: z.boolean().default(true).description('启用大肥鱼安全卫士'),
+  scanOnStart: z.boolean().default(true).description('启动 DSH 后自动扫描已安装插件'),
+  popupEnabled: z.boolean().default(true).description('在 DSH 内弹出风险提醒'),
+  popupMinIntervalMinutes: z.number().min(1).max(120).default(10).description('弹窗最小间隔（分钟）'),
+  minLevel: z.string().default('warning').description('告警等级：warning / critical / emergency'),
+  enableWebPanel: z.boolean().default(true).description('挂载本地 Web 仪表盘'),
+})
 
 export const name = 'dsh-security-guard'
 // This plugin only consumes optional DSH services through ctx.inject at
@@ -359,6 +371,17 @@ async function scanPackageFile(packagePath, packageName, scanner) {
 export function apply(ctx, config = {}) {
   const logger = ctx.logger ?? console
   const cfg = normalizeConfig(config)
+
+  let liveSettings = () => config
+  try {
+    installSettingsSection(ctx, SETTINGS_NS, SettingsSchema, config ?? {}, {
+      setSource: (source) => { liveSettings = source },
+      onChange: () => { logger.info('[SecurityGuard] DSH settings updated') },
+    })
+  } catch (err) {
+    logger.warn(`[SecurityGuard] settings registration failed: ${err instanceof Error ? err.message : String(err)}`)
+  }
+
 
   if (cfg.enabled === false) {
     logger.info('[SecurityGuard] disabled by config')
