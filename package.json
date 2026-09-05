@@ -1,0 +1,47 @@
+{
+    "name":  "dsh-security-guard",
+    "version":  "2.1.1",
+    "description":  "DeepSeek Harness (DSH) plugin security guard: 28-rule static scanner, risk scoring, alarm, auto rule update and local web dashboard. Standard dsh plugin package.",
+    "type":  "module",
+    "main":  "src/index.js",
+    "exports":  {
+                    ".":  "./src/index.js",
+                    "./package.json":  "./package.json",
+                    "./cordis.patch.yml":  "./cordis.patch.yml",
+                    "./client":  "./src/client.js"
+                },
+    "files":  [
+                  "src/",
+                  "cordis.patch.yml",
+                  "README.md",
+                  "LICENSE"
+              ],
+    "dependencies":  {
+
+                     },
+    "peerDependencies":  {
+                             "@deepseek-ai/dsh-tools":  "\u003e=0.1.0-rc.1 \u003c0.2.0-0 || \u003e=0.1.2-alpha.0 \u003c0.2.0-0"
+                         },
+    "peerDependenciesMeta":  {
+                                 "@deepseek-ai/dsh-tools":  {
+                                                                "optional":  true
+                                                            }
+                             },
+    "dsh":  {
+                "bundle":  {
+                               "patch":  "./cordis.patch.yml"
+                           },
+                "client":  {
+                               "platform":  "web"
+                           }
+            },
+    "keywords":  [
+                     "deepseek-harness",
+                     "dsh",
+                     "dsh-plugin",
+                     "security",
+                     "scanner",
+                     "guard"
+                 ],
+    "license":  "MIT"
+}

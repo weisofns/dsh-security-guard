@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DSH Security Guard - 安全仪表盘</title>
+<style>
+  :root {
+    --bg: #0d1117; --bg2: #161b22; --bg3: #21262d;
+    --border: #30363d; --text: #c9d1d9; --text2: #8b949e;
+    --green: #238636; --green2: #2ea043; --red: #da3633; --red2: #f85149;
+    --orange: #d29922; --blue: #58a6ff; --purple: #a371f7;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans SC", sans-serif;
+    background: var(--bg); color: var(--text); font-size: 13px; line-height: 1.5;
+  }
+  .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding-bottom: 16px; border-bottom: 1px solid var(--border); margin-bottom: 20px;
+  }
+  header h1 { font-size: 18px; display: flex; align-items: center; gap: 8px; }
+  header .status {
+    display: flex; align-items: center; gap: 6px; padding: 4px 12px;
+    border-radius: 20px; font-size: 12px; font-weight: 500;
+  }
+  header .status.ok { background: rgba(35,134,54,0.15); color: var(--green2); }
+  header .status.warn { background: rgba(210,153,34,0.15); color: var(--orange); }
+  header .status.danger { background: rgba(218,54,51,0.15); color: var(--red2); }
+  .pulse { width: 8px; height: 8px; border-radius: 50%; animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+  .grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 16px; margin-bottom: 20px; }
+  .card {
+    background: var(--bg2); border: 1px solid var(--border); border-radius: 10px;
+    padding: 16px; transition: border-color .2s;
+  }
+  .card:hover { border-color: var(--border); }
+  .card .label { color: var(--text2); font-size: 12px; margin-bottom: 6px; }
+  .card .value { font-size: 24px; font-weight: 600; }
+  .card .value.clean { color: var(--green2); }
+  .card .value.warn { color: var(--orange); }
+  .card .value.danger { color: var(--red2); }
+  .card .sub { color: var(--text2); font-size: 11px; margin-top: 4px; }
+
+  .section { background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 16px; overflow: hidden; }
+  .section-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 16px; background: var(--bg3); border-bottom: 1px solid var(--border);
+  }
+  .section-header h3 { font-size: 14px; font-weight: 600; }
+  .section-body { padding: 12px 16px; }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px;
+    border-radius: 6px; border: 1px solid var(--border); background: var(--bg3);
+    color: var(--text); font-size: 12px; cursor: pointer; transition: all .15s;
+  }
+  .btn:hover { background: var(--border); }
+  .btn.primary { background: var(--green); border-color: var(--green); color: #fff; }
+  .btn.primary:hover { background: var(--green2); }
+  .btn.danger { background: var(--red); border-color: var(--red); color: #fff; }
+  .btn.danger:hover { background: var(--red2); }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th, td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--border); }
+  th { color: var(--text2); font-weight: 500; font-size: 11px; text-transform: uppercase; }
+  tr:hover td { background: rgba(88,166,255,0.04); }
+  .tag {
+    display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px;
+    font-weight: 500;
+  }
+  .tag.critical { background: rgba(218,54,51,0.15); color: var(--red2); }
+  .tag.high { background: rgba(210,153,34,0.15); color: var(--orange); }
+  .tag.medium { background: rgba(88,166,255,0.15); color: var(--blue); }
+  .tag.low { background: rgba(139,148,158,0.15); color: var(--text2); }
+  .tag.clean { background: rgba(46,160,67,0.15); color: var(--green2); }
+
+  .log-item {
+    display: flex; align-items: flex-start; gap: 10px; padding: 8px 0;
+    border-bottom: 1px solid var(--border); font-size: 12px;
+  }
+  .log-item:last-child { border-bottom: none; }
+  .log-time { color: var(--text2); font-size: 11px; white-space: nowrap; min-width: 80px; }
+  .log-msg { flex: 1; }
+  .log-level { font-size: 10px; padding: 1px 6px; border-radius: 3px; font-weight: 600; }
+  .log-level.emergency { background: var(--red); color: #fff; }
+  .log-level.critical { background: rgba(218,54,51,0.2); color: var(--red2); }
+  .log-level.warning { background: rgba(210,153,34,0.2); color: var(--orange); }
+
+  .rule-row { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+  .rule-row:last-child { border-bottom: none; }
+  .rule-toggle { width: 36px; height: 20px; border-radius: 10px; background: var(--border); position: relative; cursor: pointer; transition: background .2s; flex-shrink: 0; }
+  .rule-toggle.on { background: var(--green); }
+  .rule-toggle::after { content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: transform .2s; }
+  .rule-toggle.on::after { transform: translateX(16px); }
+  .rule-info { flex: 1; }
+  .rule-name { font-weight: 500; font-size: 12px; }
+  .rule-desc { color: var(--text2); font-size: 11px; }
+
+  .empty { text-align: center; padding: 40px; color: var(--text2); }
+  .hidden { display: none; }
+
+  /* 响应式 */
+  @media (max-width: 900px) {
+    .grid { grid-template-columns: repeat(2,1fr); }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>🔒 DSH Security Guard</h1>
+    <div class="status ok" id="statusBadge">
+      <span class="pulse" style="background:var(--green2)"></span>
+      <span id="statusText">运行中</span>
+    </div>
+  </header>
+
+  <!-- 概览卡片 -->
+  <div class="grid">
+    <div class="card">
+      <div class="label">风险插件</div>
+      <div class="value danger" id="riskyPlugins">0</div>
+      <div class="sub">高危/严重</div>
+    </div>
+    <div class="card">
+      <div class="label">已扫描</div>
+      <div class="value" id="scannedCount">0</div>
+      <div class="sub">个插件</div>
+    </div>
+    <div class="card">
+      <div class="label">拦截次数</div>
+      <div class="value warn" id="blockCount">0</div>
+      <div class="sub">隔离墙触发</div>
+    </div>
+    <div class="card">
+      <div class="label">规则库</div>
+      <div class="value clean" id="ruleCount">0</div>
+      <div class="sub">条规则就绪</div>
+    </div>
+  </div>
+
+  <!-- 扫描控制台 -->
+  <div class="section">
+    <div class="section-header">
+      <h3>🛡️ 扫描控制台</h3>
+      <div style="display:flex;gap:8px;">
+        <button class="btn primary" id="btnScanAll" onclick="scanAll()">🔍 全盘扫描</button>
+        <button class="btn" id="btnUpdateRules" onclick="updateRules()">📥 更新规则</button>
+        <button class="btn danger" id="btnEmergency" onclick="toggleEmergency()">🚨 紧急模式</button>
+      </div>
+    </div>
+    <div class="section-body" id="scanResults">
+      <div class="empty">点击「全盘扫描」开始检测已安装插件</div>
+    </div>
+  </div>
+
+  <!-- 最近告警 -->
+  <div class="section">
+    <div class="section-header">
+      <h3>🔔 最近告警</h3>
+      <button class="btn" onclick="clearLogs()">清空</button>
+    </div>
+    <div class="section-body" id="alarmLog">
+      <div class="empty">暂无告警</div>
+    </div>
+  </div>
+
+  <!-- 规则库 -->
+  <div class="section">
+    <div class="section-header">
+      <h3>📋 规则库</h3>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <span style="color:var(--text2);font-size:12px;">点击开关可临时禁用规则</span>
+        <button class="btn primary" onclick="toggleAddRule()">➕ 添加规则</button>
+      </div>
+    </div>
+    <div class="section-body" id="ruleList">
+      <div class="empty">加载中...</div>
+    </div>
+      <div class="section-body hidden" id="addRuleForm">
+        <table>
+          <tr>
+            <td style="width:120px;">规则 ID</td>
+            <td><input type="text" id="ruleId" placeholder="例如 CUSTOM-001" style="width:100%;padding:6px;border-radius:6px;border:1px solid var(--border);background:var(--bg3);color:var(--text);"></td>
+          </tr>
+          <tr>
+            <td>规则名称</td>
+            <td><input type="text" id="ruleName" placeholder="例如 禁止访问敏感域名" style="width:100%;padding:6px;border-radius:6px;border:1px solid var(--border);background:var(--bg3);color:var(--text);"></td>
+          </tr>
+          <tr>
+            <td>严重级别</td>
+            <td>
+              <select id="ruleSeverity" style="width:100%;padding:6px;border-radius:6px;border:1px solid var(--border);background:var(--bg3);color:var(--text);">
+                <option value="critical">critical</option>
+                <option value="high" selected>high</option>
+                <option value="medium">medium</option>
+                <option value="low">low</option>
+                <option value="info">info</option>
+              </select>
+            </td>
+          </tr>
+          <tr>
+            <td>分类</td>
+            <td>
+              <select id="ruleCategory" style="width:100%;padding:6px;border-radius:6px;border:1px solid var(--border);background:var(--bg3);color:var(--text);">
+                <option value="custom">custom</option>
+                <option value="token-theft">token-theft</option>
+                <option value="data-exfil">data-exfil</option>
+                <option value="credential-access">credential-access</option>
+                <option value="code-execution">code-execution</option>
+                <option value="obfuscation">obfuscation</option>
+                <option value="network">network</option>
+                <option value="filesystem">filesystem</option>
+                <option value="process">process</option>
+                <option value="supply-chain">supply-chain</option>
+                <option value="persistence">persistence</option>
+                <option value="privilege-escalation">privilege-escalation</option>
+              </select>
+            </td>
+          </tr>
+          <tr>
+            <td>描述</td>
+            <td><input type="text" id="ruleDescription" placeholder="这条规则检测什么" style="width:100%;padding:6px;border-radius:6px;border:1px solid var(--border);background:var(--bg3);color:var(--text);"></td>
+          </tr>
+          <tr>
+            <td>匹配模式</td>
+            <td><textarea id="rulePatterns" rows="3" placeholder="每行一个：普通文本按子串匹配；/正则/flags 按正则匹配" style="width:100%;padding:6px;border-radius:6px;border:1px solid var(--border);background:var(--bg3);color:var(--text);"></textarea></td>
+          </tr>
+        </table>
+        <div style="display:flex;gap:8px;margin-top:10px;">
+          <button class="btn primary" onclick="submitRule()">保存规则</button>
+          <button class="btn" onclick="toggleAddRule()">取消</button>
+        </div>
+      </div>
+  </div>
+
+  <!-- 隔离策略 -->
+  <div class="section">
+    <div class="section-header"><h3>🧱 隔离墙策略</h3></div>
+    <div class="section-body">
+      <table>
+        <tr><th>策略项</th><th>当前值</th></tr>
+        <tr><td>禁止注入的服务</td><td id="policyBlocked">-</td></tr>
+        <tr><td>文件写入范围</td><td id="policyScope">-</td></tr>
+        <tr><td>允许的网络目标</td><td id="policyHosts">-</td></tr>
+      </table>
+    </div>
+  </div>
+    <!-- 信任区 / 黑名单 -->
+    <div class="section">
+      <div class="section-header"><h3>🛡️ 信任区 / 黑名单</h3></div>
+      <div class="section-body">
+        <div style="display:flex;gap:16px;flex-wrap:wrap;">
+          <div style="flex:1;min-width:260px;">
+            <div style="color:var(--green2);font-weight:600;margin-bottom:6px;">✅ 信任区白名单（跳过扫描）</div>
+            <textarea id="whitelistArea" rows="5" style="width:100%;padding:8px;border-radius:6px;border:1px solid var(--border);background:var(--bg3);color:var(--text);" placeholder="每行一个插件名"></textarea>
+            <button class="btn primary" style="margin-top:6px;" onclick="saveWhitelist()">保存白名单</button>
+            <div id="whitelistList" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px;"></div>
+          </div>
+          <div style="flex:1;min-width:260px;">
+            <div style="color:var(--red2);font-weight:600;margin-bottom:6px;">🚫 黑名单（命中即 critical）</div>
+            <textarea id="blacklistArea" rows="5" style="width:100%;padding:8px;border-radius:6px;border:1px solid var(--border);background:var(--bg3);color:var(--text);" placeholder="每行一个插件名"></textarea>
+            <button class="btn danger" style="margin-top:6px;" onclick="saveBlacklist()">保存黑名单</button>
+            <div id="blacklistList" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px;"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+</div>
+
+<script>
+// ============================================================
+// DSH Security Guard - 前端面板
+// 与后端通信方式（按优先级尝试）：
+// 1. window.parent.postMessage (DSH Webview 通信)
+// 2. fetch('/api/security-guard/...') (HTTP API)
+// 3. localStorage 事件 (同域降级)
+// ============================================================
+
+const API = {
+  async call(method, params = {}) {
+    // 方式1: 优先走 HTTP API（顶层页面和同源 iframe 都可用）
+    try {
+      const res = await fetch(`/api/security-guard/${method}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params)
+      });
+      if (res.ok) return await res.json();
+    } catch { /* continue */ }
+
+    // 方式2: postMessage (DSH iframe/webview 环境降级)
+    if (window.parent !== window) {
+      try {
+        return await new Promise((resolve, reject) => {
+          const reqId = Math.random().toString(36).slice(2);
+          const handler = (e) => {
+            if (e.data?.reqId === reqId) {
+              window.removeEventListener('message', handler);
+              if (e.data.error) reject(new Error(e.data.error));
+              else resolve(e.data.result);
+            }
+          };
+          window.addEventListener('message', handler);
+          window.parent.postMessage({ reqId, method, params, source: 'dsh-security-guard-panel' }, '*');
+          setTimeout(() => { window.removeEventListener('message', handler); reject(new Error('timeout')); }, 5000);
+        });
+      } catch { /* continue */ }
+    }
+
+    // 方式3: 降级到 mock 数据（演示用）
+    return mockData(method, params);
+  }
+};
+
+// Mock 数据（当后端未连接时展示界面效果）
+function mockData(method, params) {
+  if (method === 'getStats') {
+    return { totalRules: 28, matchCount: 3, skipCount: 47, scannedPlugins: 12, blockedEvents: 1, riskyPlugins: 1 };
+  }
+  if (method === 'getSecurityLog') {
+    return [
+      { id: '1', timestamp: new Date().toISOString(), level: 'warning', message: '插件 dsh-suspicious 扫描发现 3 个风险' },
+      { id: '2', timestamp: new Date(Date.now()-60000).toISOString(), level: 'critical', message: '隔离墙阻止了 dsh-evil 注入 fs 服务' },
+    ];
+  }
+  if (method === 'getRules') {
+    return [
+      { id: 'TOK-001', name: '硬编码 API Key', severity: 'critical', category: 'token-theft', enabled: true },
+      { id: 'TOK-002', name: 'Token 外发', severity: 'critical', category: 'token-theft', enabled: true },
+      { id: 'EXE-001', name: '动态代码执行', severity: 'high', category: 'code-execution', enabled: true },
+      { id: 'OBF-001', name: '代码混淆', severity: 'medium', category: 'obfuscation', enabled: true },
+    ];
+  }
+  if (method === 'getIsolationPolicy') {
+    return { blockedServices: ['fs','subprocess'], allowedHosts: ['localhost','api.deepseek.com'], maxFileWriteScope: 'workspace' };
+  }
+  if (method === 'scanAll') {
+    return { done: true, results: [
+      { pluginName: 'dsh-normal', riskLevel: 'clean', riskScore: 0 },
+      { pluginName: 'dsh-suspicious', riskLevel: 'high', riskScore: 18 },
+      { pluginName: 'dsh-evil', riskLevel: 'critical', riskScore: 45 },
+    ]};
+  }
+  if (method === 'updateRules') return { updated: 0, failed: 0 };
+  if (method === 'setEmergencyMode') return { ok: true };
+  return {};
+}
+
+// 状态
+let isEmergency = false;
+let rules = [];
+
+// 初始化
+async function init() {
+  await refreshStats();
+  await refreshLogs();
+  await refreshRules();
+  await refreshPolicy();
+  // 定时刷新
+  setInterval(refreshStats, 5000);
+  setInterval(refreshLogs, 3000);
+}
+
+async function refreshStats() {
+  try {
+    const stats = await API.call('getStats');
+    document.getElementById('riskyPlugins').textContent = stats.riskyPlugins ?? 0;
+    document.getElementById('scannedCount').textContent = stats.scannedPlugins ?? 0;
+    document.getElementById('blockCount').textContent = stats.blockedEvents ?? 0;
+    document.getElementById('ruleCount').textContent = stats.totalRules ?? 0;
+
+    const badge = document.getElementById('statusBadge');
+    const text = document.getElementById('statusText');
+    if (stats.riskyPlugins > 0) {
+      badge.className = 'status danger';
+      badge.querySelector('.pulse').style.background = 'var(--red2)';
+      text.textContent = `发现 ${stats.riskyPlugins} 个风险`;
+    } else if (stats.blockedEvents > 0) {
+      badge.className = 'status warn';
+      badge.querySelector('.pulse').style.background = 'var(--orange)';
+      text.textContent = '已拦截威胁';
+    } else {
+      badge.className = 'status ok';
+      badge.querySelector('.pulse').style.background = 'var(--green2)';
+      text.textContent = '运行中';
+    }
+  } catch (e) { console.error('refreshStats', e); }
+}
+
+async function refreshLogs() {
+  try {
+    const logs = await API.call('getSecurityLog');
+    const el = document.getElementById('alarmLog');
+    if (!logs || logs.length === 0) {
+      el.innerHTML = '<div class="empty">暂无告警</div>'; return;
+    }
+    el.innerHTML = logs.slice(0, 20).map(l => `
+      <div class="log-item">
+        <div class="log-time">${new Date(l.timestamp).toLocaleTimeString()}</div>
+        <div class="log-level ${l.level}">${l.level.toUpperCase()}</div>
+        <div class="log-msg">${escapeHtml(l.message)}</div>
+      </div>
+    `).join('');
+  } catch (e) { console.error('refreshLogs', e); }
+}
+
+async function refreshRules() {
+  try {
+    rules = await API.call('getRules');
+    const el = document.getElementById('ruleList');
+    if (!rules || rules.length === 0) {
+      el.innerHTML = '<div class="empty">暂无规则</div>'; return;
+    }
+    el.innerHTML = rules.map((r, i) => `
+      <div class="rule-row">
+        <div class="rule-toggle ${r.enabled !== false ? 'on' : ''}" onclick="toggleRule(${i})"></div>
+        <div class="rule-info">
+          <div class="rule-name">${escapeHtml(r.id)} · ${escapeHtml(r.name)} <span class="tag ${r.severity}">${r.severity}</span>${r.custom ? ' <span class="tag low">自定义</span>' : ''}</div>
+          <div class="rule-desc">${escapeHtml(r.category)} · ${escapeHtml(r.description || '')}</div>
+        </div>
+        <button class="btn" style="padding:2px 8px;" onclick="deleteRule('${r.id}')">删除</button>
+      </div>
+    `).join('');
+  } catch (e) { console.error('refreshRules', e); }
+}
+
+async function refreshPolicy() {
+  try {
+    const p = await API.call('getIsolationPolicy');
+    document.getElementById('policyBlocked').textContent = (p.blockedServices || []).join(', ') || '无';
+    document.getElementById('policyScope').textContent = p.maxFileWriteScope || 'workspace';
+    document.getElementById('policyHosts').textContent = (p.allowedHosts || []).join(', ') || '无限制';
+    const pol = await API.call('getPolicy');
+    document.getElementById('whitelistArea').value = (pol.whitelist || []).join('\n');
+    document.getElementById('blacklistArea').value = (pol.blacklist || []).join('\n');
+    renderPolicyList('whitelistList', pol.whitelist || [], 'whitelist');
+    renderPolicyList('blacklistList', pol.blacklist || [], 'blacklist');
+  } catch (e) { console.error('refreshPolicy', e); }
+}
+
+function renderPolicyList(elId, items, kind) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  if (!items || items.length === 0) {
+    el.innerHTML = '<span style="color:var(--text2);font-size:12px;">暂无条目</span>';
+    return;
+  }
+  el.innerHTML = items.map((item) => {
+    const tagClass = kind === 'whitelist' ? 'clean' : 'critical';
+    return `<span class="tag ${tagClass}" style="display:inline-flex;align-items:center;gap:6px;">${escapeHtml(item)} <span style="cursor:pointer;font-weight:700;" title="移除" onclick="removePolicyItem('${kind}', '${escapeHtml(item)}')">×</span></span>`;
+  }).join('');
+}
+
+async function removePolicyItem(kind, item) {
+  const method = kind === 'whitelist' ? 'removeWhitelist' : 'removeBlacklist';
+  try {
+    await API.call(method, { item });
+    await refreshPolicy();
+    await refreshStats();
+  } catch (e) { alert('移除失败: ' + e.message); }
+}
+
+async function saveWhitelist() {
+  try {
+    const items = document.getElementById('whitelistArea').value.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+    const res = await API.call('setWhitelist', { items });
+    if (res.ok) { await refreshPolicy(); await refreshStats(); }
+  } catch (e) { alert('保存白名单失败: ' + e.message); }
+}
+
+async function saveBlacklist() {
+  try {
+    const items = document.getElementById('blacklistArea').value.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+    const res = await API.call('setBlacklist', { items });
+    if (res.ok) { await refreshPolicy(); await refreshStats(); }
+  } catch (e) { alert('保存黑名单失败: ' + e.message); }
+}
+
+async function addWhitelist(name) {
+  try { await API.call('addWhitelist', { item: name }); await refreshPolicy(); await refreshStats(); } catch (e) { alert('加入白名单失败: ' + e.message); }
+}
+
+async function addBlacklist(name) {
+  try { await API.call('addBlacklist', { item: name }); await refreshPolicy(); await refreshStats(); } catch (e) { alert('加入黑名单失败: ' + e.message); }
+}
+
+async function deletePlugin(name) {
+  if (!confirm('确定要删除插件 ' + name + ' 吗？\n\n删除插件需要调用 DSH 插件管理命令，建议先退出 DSH Desktop 再操作。')) return;
+  try {
+    const res = await API.call('deletePlugin', { pluginName: name });
+    if (!res.ok) { alert('删除失败: ' + (res.error || '未知错误')); return; }
+    alert('删除请求已执行：\n' + (res.stdout || '') + (res.stderr || ''));
+    await refreshStats();
+  } catch (e) { alert('删除失败: ' + e.message); }
+}
+
+async function scanAll() {
+  const btn = document.getElementById('btnScanAll');
+  btn.disabled = true; btn.textContent = '🔍 扫描中...';
+  try {
+    const res = await API.call('scanAll');
+    const el = document.getElementById('scanResults');
+    if (!res.results || res.results.length === 0) {
+      el.innerHTML = '<div class="empty">未发现插件</div>'; return;
+    }
+    const rows = res.results.map(r => {
+      const findings = Array.isArray(r.findings) ? r.findings.slice(0, 10) : [];
+      const findingRows = findings.length === 0
+        ? '<div class="empty">未发现具体风险</div>'
+        : `<table class="inner-table"><tr><th>规则</th><th>级别</th><th>位置</th><th>匹配</th><th>建议</th></tr>${findings.map(f => `<tr><td>${escapeHtml(f.ruleId)} ${escapeHtml(f.ruleName)}</td><td><span class="tag ${f.severity}">${f.severity.toUpperCase()}</span></td><td>${escapeHtml(f.filePath)}:${f.line}</td><td>${escapeHtml(f.match || '')}</td><td>${escapeHtml(f.recommendation || '请人工审查此插件的安全风险')}</td></tr>`).join('')}</table>`;
+      return `<tr><td colspan="3" style="background:var(--bg3);"><b>${escapeHtml(r.pluginName)}</b> · <span class="tag ${r.riskLevel}">${r.riskLevel.toUpperCase()}</span> · 评分 ${r.riskScore} · ${r.findingsCount} 个命中 <button class="btn" style="padding:2px 8px;margin-left:8px;" onclick="addWhitelist('${r.pluginName}')">信任</button> <button class="btn danger" style="padding:2px 8px;" onclick="addBlacklist('${r.pluginName}')">拉黑</button> <button class="btn" style="padding:2px 8px;" onclick="deletePlugin('${r.pluginName}')">删除</button></td></tr><tr><td colspan="3">${findingRows}</td></tr>`;
+    }).join('');
+    el.innerHTML = `<table><tr><th>插件</th><th>风险</th><th>评分</th></tr>${rows}</table>`;
+  } finally {
+    btn.disabled = false; btn.textContent = '🔍 全盘扫描';
+  }
+}
+
+async function updateRules() {
+  const btn = document.getElementById('btnUpdateRules');
+  btn.disabled = true; btn.textContent = '📥 更新中...';
+  try {
+    const res = await API.call('updateRules');
+    alert(`规则更新完成：新增 ${res.updated} 条，失败 ${res.failed} 条`);
+    await refreshRules();
+  } finally { btn.disabled = false; btn.textContent = '📥 更新规则'; }
+}
+
+async function toggleEmergency() {
+  const btn = document.getElementById('btnEmergency');
+  isEmergency = !isEmergency;
+  try {
+    await API.call('setEmergencyMode', { enable: isEmergency });
+    btn.textContent = isEmergency ? '✅ 解除紧急' : '🚨 紧急模式';
+    btn.className = isEmergency ? 'btn' : 'btn danger';
+  } catch (e) { alert('操作失败: ' + e.message); }
+}
+
+async function toggleRule(index) {
+  const r = rules[index];
+  if (!r) return;
+  r.enabled = r.enabled === false ? true : false;
+  // 通知后端（如果有）
+  try { await API.call('setRuleEnabled', { ruleId: r.id, enabled: r.enabled }); } catch {}
+  await refreshRules();
+}
+
+async function clearLogs() {
+  try { await API.call('clearSecurityLog'); } catch {}
+  document.getElementById('alarmLog').innerHTML = '<div class="empty">暂无告警</div>';
+}
+
+function toggleAddRule() {
+  const el = document.getElementById('addRuleForm');
+  el.classList.toggle('hidden');
+}
+
+async function submitRule() {
+  const patterns = document.getElementById('rulePatterns').value.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+  const rule = {
+    id: document.getElementById('ruleId').value.trim(),
+    name: document.getElementById('ruleName').value.trim(),
+    severity: document.getElementById('ruleSeverity').value,
+    category: document.getElementById('ruleCategory').value,
+    description: document.getElementById('ruleDescription').value.trim(),
+    patterns,
+  };
+  if (!rule.id || !rule.name || rule.patterns.length === 0) { alert('请填写规则 ID、名称和至少一行匹配模式'); return; }
+  try {
+    const res = await API.call('addRule', { rule });
+    if (!res.ok) { alert('添加失败，请检查规则格式'); return; }
+    document.getElementById('ruleId').value = '';
+    document.getElementById('ruleName').value = '';
+    document.getElementById('ruleDescription').value = '';
+    document.getElementById('rulePatterns').value = '';
+    toggleAddRule();
+    await refreshRules();
+  } catch (e) { alert('添加失败: ' + e.message); }
+}
+
+async function deleteRule(ruleId) {
+  if (!confirm('确定删除/禁用规则 ' + ruleId + ' ？')) return;
+  try {
+    await API.call('deleteRule', { ruleId });
+    await refreshRules();
+  } catch (e) { alert('删除失败: ' + e.message); }
+}
+
+function escapeHtml(s) {
+  const d = document.createElement('div'); d.textContent = s; return d.innerHTML;
+}
+
+// 监听后端主动推送
+window.addEventListener('message', (e) => {
+  if (e.data?.source === 'dsh-security-guard-backend') {
+    if (e.data.type === 'alarm') refreshLogs();
+    if (e.data.type === 'stats') refreshStats();
+  }
+});
+
+init();
+</script>
+</body>
+</html>

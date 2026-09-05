@@ -1,0 +1,21 @@
+# DSH Security Guard - standard dsh bundle patch.
+# `dsh plugin --profile <profile> add <this-package>` merges this file into
+# the profile's cordis.patch.yml. `id` and `name` are the package name.
+- insert:
+    - id: dsh-security-guard
+      name: dsh-security-guard
+      config:
+        enabled: true
+        scanOnStart: true
+        autoUpdateRules: true
+        enableWebPanel: true
+        webPanelPath: /security-guard
+        maxFileSize: 1048576
+        includeNodeModules: false
+        whitelist: []
+        remoteSources: []
+        autoUpdateInterval: 0
+        minLevel: warning
+        channels:
+          - console
+        webhookUrl: ""
