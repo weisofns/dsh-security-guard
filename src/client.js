@@ -254,7 +254,7 @@ window.__ModuleLoader__.load({
       );
     }
 
-    const inject = ["slots", "settingsScope"];
+    const inject = ["slots"];
 
     function apply(ctx) {
       if (ctx && typeof ctx.slots?.inject === "function" && typeof ctx.slots.register === "function") {
